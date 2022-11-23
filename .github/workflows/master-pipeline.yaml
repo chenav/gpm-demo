@@ -1,0 +1,47 @@
+name: Deploy Website
+on:
+  push:
+    branches: [ test ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: 'Build'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    steps:
+
+      - uses: actions/checkout@v3
+      
+      - name: 'Authenticate GCP Service Account' 
+        id: 'auth'
+        uses: 'google-github-actions/auth@v0'
+        with:
+          workload_identity_provider: ${{ secrets.MASTER_WORKLOAD_IDENTITY_PROVIDER }} 
+          service_account: ${{ secrets.MASTER_GCP_SA_EMAIL }}  
+
+      # Install gcloud, `setup-gcloud` automatically picks up authentication from `auth`.
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v0'
+            
+      - name: Configure Docker
+        run: |
+          gcloud auth configure-docker
+      
+      - name: Build Docker
+        run: |
+          docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID_PROD }}/gpm-demo:latest -f Dockerfile .
+
+      - name: Push
+        run: |
+          docker push gcr.io/${{ secrets.GCP_PROJECT_ID_PROD }}/gpm-demo:latest
+
+      - name: Deploy
+        run: |
+          gcloud run deploy my-web-container \
+          --region europe-west1 \
+          --image gcr.io/${{ secrets.GCP_PROJECT_ID_PROD }}/gpm-demo \
+          --platform managed \
+          --allow-unauthenticated \
+          --project ${{ secrets.GCP_PROJECT_ID_PROD }}
